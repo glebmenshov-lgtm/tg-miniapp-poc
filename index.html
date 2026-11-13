@@ -16,64 +16,121 @@
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; padding: 16px;
+      margin: 0; padding: 12px 16px 24px;
       background: var(--bg); color: var(--text);
       font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    h1 { font-size: 20px; margin: 0 0 4px; }
-    .hint { color: var(--hint); font-size: 14px; margin: 0 0 16px; }
+    .top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    h1 { font-size: 18px; margin: 0; }
+    #status { color: var(--hint); font-size: 13px; white-space: nowrap; }
     .card { background: var(--card); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
-    label { display: block; font-size: 14px; color: var(--hint); margin-bottom: 6px; }
+    label { display: block; font-size: 13px; color: var(--hint); margin: 8px 0 4px; }
+    label:first-child { margin-top: 0; }
     input, textarea {
-      width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid transparent;
+      width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid transparent;
       background: var(--bg); color: var(--text); font: inherit; outline: none;
     }
+    textarea { resize: vertical; min-height: 64px; }
     input:focus, textarea:focus { border-color: var(--accent); }
+    .row { display: flex; gap: 8px; }
     button {
-      width: 100%; padding: 12px; margin-top: 8px; border: 0; border-radius: 10px;
+      flex: 1; padding: 11px; margin-top: 8px; border: 0; border-radius: 10px;
       background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
     }
     button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-    pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+    details { color: var(--hint); font-size: 13px; }
+    pre { margin: 8px 0 0; font-size: 12px; white-space: pre-wrap; word-break: break-all; color: var(--text); }
   </style>
 </head>
 <body>
-  <h1>Motion · тестовое приложение</h1>
-  <p class="hint" id="where">Открыто вне Telegram</p>
+  <div class="top">
+    <h1>Карточка клиента</h1>
+    <span id="status"></span>
+  </div>
 
   <div class="card">
-    <label for="note">Заметка по клиенту</label>
-    <input id="note" placeholder="Например: заказ №123, оплата завтра">
+    <label for="name">Имя</label>
+    <input id="name" autocomplete="off">
+    <label for="phone">Телефон</label>
+    <input id="phone" inputmode="tel" autocomplete="off">
+    <label for="order">Заказ</label>
+    <input id="order" autocomplete="off">
+    <label for="comment">Комментарий</label>
+    <textarea id="comment"></textarea>
     <button id="toChat">Вставить в чат и закрыть</button>
-    <button id="close" class="secondary">Просто закрыть</button>
+    <div class="row">
+      <button id="clear" class="secondary">Очистить</button>
+      <button id="close" class="secondary">Закрыть</button>
+    </div>
   </div>
 
-  <div class="card">
-    <label>Что Telegram передал приложению</label>
+  <details>
+    <summary>Что Telegram передал приложению</summary>
     <pre id="info">—</pre>
-  </div>
+  </details>
 
   <script>
     const tg = window.Telegram && window.Telegram.WebApp;
+    const inTelegram = !!(tg && tg.initData);
     const $ = (id) => document.getElementById(id);
+    const FIELDS = ['name', 'phone', 'order', 'comment'];
+    const LABELS = { name: 'Имя', phone: 'Тел', order: 'Заказ', comment: 'Комм' };
+    const KEY = 'draft_v1';
 
-    if (tg && tg.initData !== undefined) {
-      tg.ready();
-      tg.expand();
+    // Draft storage: Telegram CloudStorage (synced per user across devices), fallback to localStorage
+    const cloud = inTelegram && tg.isVersionAtLeast && tg.isVersionAtLeast('6.9') && tg.CloudStorage;
+    const store = {
+      get(cb) {
+        if (cloud) return tg.CloudStorage.getItem(KEY, (err, val) => cb(err ? null : val));
+        try { cb(localStorage.getItem(KEY)); } catch (e) { cb(null); }
+      },
+      set(val, cb) {
+        if (cloud) return tg.CloudStorage.setItem(KEY, val, (err) => cb && cb(!err));
+        try { localStorage.setItem(KEY, val); cb && cb(true); } catch (e) { cb && cb(false); }
+      },
+    };
 
-      const d = tg.initDataUnsafe || {};
-      const who = d.user ? [d.user.first_name, d.user.last_name].filter(Boolean).join(' ') : 'неизвестно';
-      $('where').textContent = 'Открыл: ' + who + ' · платформа: ' + tg.platform + ' · версия API: ' + tg.version;
+    const collect = () => Object.fromEntries(FIELDS.map((f) => [f, $(f).value]));
+    const fill = (o) => FIELDS.forEach((f) => { $(f).value = (o && typeof o[f] === 'string') ? o[f] : ''; });
+    const setStatus = (t) => { $('status').textContent = t; };
+    const now = () => new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-      const shown = Object.assign({}, d);
+    let timer = null;
+    function saveSoon() {
+      setStatus('сохраняю…');
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        store.set(JSON.stringify(collect()), (ok) => setStatus(ok ? 'сохранено ✓ ' + now() : 'не сохранилось'));
+      }, 400);
+    }
+
+    store.get((val) => {
+      if (val) {
+        try { fill(JSON.parse(val)); setStatus('черновик восстановлен'); } catch (e) { /* ignore broken draft */ }
+      }
+      FIELDS.forEach((f) => $(f).addEventListener('input', saveSoon));
+    });
+
+    $('clear').addEventListener('click', () => { fill({}); saveSoon(); });
+
+    if (inTelegram) {
+      tg.ready(); // no expand(): opens at partial height so the chat stays visible above
+
+      const shown = Object.assign({}, tg.initDataUnsafe);
       delete shown.hash;
       delete shown.signature;
-      $('info').textContent = JSON.stringify(shown, null, 2) || '{}';
+      shown.platform = tg.platform;
+      shown.version = tg.version;
+      shown.storage = cloud ? 'Telegram CloudStorage' : 'localStorage';
+      $('info').textContent = JSON.stringify(shown, null, 2);
 
       $('toChat').addEventListener('click', () => {
-        const text = $('note').value.trim();
+        const d = collect();
+        const text = FIELDS.filter((f) => d[f].trim())
+          .map((f) => LABELS[f] + ': ' + d[f].trim().replace(/\s+/g, ' '))
+          .join('; ')
+          .slice(0, 250); // inline query limit is 256 chars
         try {
-          // Вставляет "@бот <текст>" в строку ввода текущего чата
           tg.switchInlineQuery(text);
         } catch (e) {
           tg.showAlert('switchInlineQuery недоступен: ' + e.message);
@@ -83,6 +140,7 @@
     } else {
       $('toChat').disabled = true;
       $('close').disabled = true;
+      $('info').textContent = 'Открыто вне Telegram';
     }
   </script>
 </body>
