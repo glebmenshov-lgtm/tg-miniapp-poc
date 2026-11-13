@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Motion PoC</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #ffffff);
+      --text: var(--tg-theme-text-color, #111111);
+      --hint: var(--tg-theme-hint-color, #8a8a8a);
+      --accent: var(--tg-theme-button-color, #2481cc);
+      --accent-text: var(--tg-theme-button-text-color, #ffffff);
+      --card: var(--tg-theme-secondary-bg-color, #f1f1f4);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 16px;
+      background: var(--bg); color: var(--text);
+      font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .hint { color: var(--hint); font-size: 14px; margin: 0 0 16px; }
+    .card { background: var(--card); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+    label { display: block; font-size: 14px; color: var(--hint); margin-bottom: 6px; }
+    input, textarea {
+      width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid transparent;
+      background: var(--bg); color: var(--text); font: inherit; outline: none;
+    }
+    input:focus, textarea:focus { border-color: var(--accent); }
+    button {
+      width: 100%; padding: 12px; margin-top: 8px; border: 0; border-radius: 10px;
+      background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
+    }
+    button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+    pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Motion · тестовое приложение</h1>
+  <p class="hint" id="where">Открыто вне Telegram</p>
+
+  <div class="card">
+    <label for="note">Заметка по клиенту</label>
+    <input id="note" placeholder="Например: заказ №123, оплата завтра">
+    <button id="toChat">Вставить в чат и закрыть</button>
+    <button id="close" class="secondary">Просто закрыть</button>
+  </div>
+
+  <div class="card">
+    <label>Что Telegram передал приложению</label>
+    <pre id="info">—</pre>
+  </div>
+
+  <script>
+    const tg = window.Telegram && window.Telegram.WebApp;
+    const $ = (id) => document.getElementById(id);
+
+    if (tg && tg.initData !== undefined) {
+      tg.ready();
+      tg.expand();
+
+      const d = tg.initDataUnsafe || {};
+      const who = d.user ? [d.user.first_name, d.user.last_name].filter(Boolean).join(' ') : 'неизвестно';
+      $('where').textContent = 'Открыл: ' + who + ' · платформа: ' + tg.platform + ' · версия API: ' + tg.version;
+
+      const shown = Object.assign({}, d);
+      delete shown.hash;
+      delete shown.signature;
+      $('info').textContent = JSON.stringify(shown, null, 2) || '{}';
+
+      $('toChat').addEventListener('click', () => {
+        const text = $('note').value.trim();
+        try {
+          // Вставляет "@бот <текст>" в строку ввода текущего чата
+          tg.switchInlineQuery(text);
+        } catch (e) {
+          tg.showAlert('switchInlineQuery недоступен: ' + e.message);
+        }
+      });
+      $('close').addEventListener('click', () => tg.close());
+    } else {
+      $('toChat').disabled = true;
+      $('close').disabled = true;
+    }
+  </script>
+</body>
+</html>
