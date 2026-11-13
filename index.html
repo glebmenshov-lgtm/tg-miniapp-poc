@@ -71,7 +71,8 @@
 
   <script>
     const tg = window.Telegram && window.Telegram.WebApp;
-    const inTelegram = !!(tg && tg.initData);
+    // initData may be empty for inline-mode launches, so detect Telegram by platform instead
+    const inTelegram = !!(tg && tg.platform && tg.platform !== 'unknown');
     const $ = (id) => document.getElementById(id);
     const FIELDS = ['name', 'phone', 'order', 'comment'];
     const LABELS = { name: 'Имя', phone: 'Тел', order: 'Заказ', comment: 'Комм' };
